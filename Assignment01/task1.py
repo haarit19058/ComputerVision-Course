@@ -87,7 +87,22 @@ def svd_decomposition(M: np.ndarray) -> tuple:
     return U, sigma, Vt
 
 def add_watermark_single_channel(cover_image: np.ndarray, watermark: np.ndarray, alpha: float) -> np.ndarray:
-    """Add watermark to a given channel of an image"""
+    """Add watermark to a given channel of an image
+    
+        Parameters
+        ----------
+        cover_image : np.ndarray
+            Image where watermark needs to be applied
+        watermark : np.ndarray
+            Watermark
+        alpha : float
+            Alpha to control the strength of watermark
+    
+        Returns
+        -------
+        np.ndarray
+            Watermarked Image
+        """
     
     U_c, S_c, Vt_c = svd_decomposition(cover_image)
     _, S_w, _ = svd_decomposition(watermark)
@@ -103,7 +118,24 @@ def add_watermark_single_channel(cover_image: np.ndarray, watermark: np.ndarray,
 
 
 def recover_watermark(original_image: np.ndarray, watermarked_image: np.ndarray, watermark: np.ndarray, alpha: float) -> np.ndarray:
-    """Recover watermark from a given channel of an image"""
+    """Recover watermark from a given channel of an image
+    
+        Parameters
+        ----------
+        original_image : np.ndarray
+            Original image
+        watermarked_image : np.ndarray
+            Watermarked image
+        watermark : np.ndarray
+            Watermark
+        alpha : float
+            Alpha used during watermarking
+    
+        Returns
+        -------
+        np.ndarray
+            Recovered watermark
+        """
     
     _, S_orig, _ = svd_decomposition(original_image)
     _, S_watermarked, _ = svd_decomposition(watermarked_image)
@@ -121,7 +153,21 @@ def recover_watermark(original_image: np.ndarray, watermarked_image: np.ndarray,
 
 
 def add_watermark_rgb(cover_image: np.ndarray, watermark: np.ndarray, alpha: float) -> np.ndarray:
-    """Add watermark to a given RGB image"""
+    """Add watermark to a given RGB image
+        Parameters
+        ----------
+        cover_image : np.ndarray
+            Image where watermark needs to be applied
+        watermark : np.ndarray
+            Watermark
+        alpha : float
+            Alpha to control the strength of watermark
+    
+        Returns
+        -------
+        np.ndarray
+            Watermarked Image
+        """
 
     watermarked_image = np.zeros_like(cover_image)
     for channel in range(3):
@@ -133,7 +179,23 @@ def add_watermark_rgb(cover_image: np.ndarray, watermark: np.ndarray, alpha: flo
     return watermarked_image
 
 def recover_watermark_rgb(original_image: np.ndarray, watermarked_image: np.ndarray, watermark: np.ndarray, alpha: float) -> np.ndarray:
-    """Recover watermark from a given RGB image"""
+    """Recover watermark from a given RGB image
+        Parameters
+        ----------
+        original_image : np.ndarray
+            Original image
+        watermarked_image : np.ndarray
+            Watermarked image
+        watermark : np.ndarray
+            Watermark
+        alpha : float
+            Alpha used during watermarking
+    
+        Returns
+        -------
+        np.ndarray
+            Recovered watermark
+        """
     
     recovered_watermark = np.zeros_like(watermark)
     for channel in range(3):
