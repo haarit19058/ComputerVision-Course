@@ -9,7 +9,6 @@ import getpass
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 from task1 import *
 
 from dotenv import load_dotenv
@@ -32,7 +31,19 @@ def compute_psnr(original: np.ndarray, modified: np.ndarray) -> float:
             PSNR value
         """
 
-    psnr = 0.0 # comment this line and write your code for the function
+    # Calculate Mean Squared Error (MSE) across all pixels and channels
+    mse = np.mean((original - modified) ** 2)
+    
+    # Avoid division by zero if images are identical
+    if mse == 0:
+        return float('inf')
+        
+    # As per the assignment, MAX = 1 since images are scaled to [0, 1]
+    max_val = 1.0
+    
+    # Calculate PSNR: 20 * log10(MAX / sqrt(MSE))
+    psnr = 20 * np.log10(max_val / np.sqrt(mse))
+    
     return psnr
 
 
@@ -41,6 +52,7 @@ if __name__ == "__main__":
     image_paths = sorted(glob.glob("imgs/*.jpg"))
     images_rgb = [load_image_as_rgb(path) for path in image_paths]
     watermark_rgb = load_image_as_rgb(os.getenv("watermark_path"))
+    
     # NOTE: All 3 provided cover images in imgs/ are (321, 481) i.e. same size,
     # so k = min(H, W) = 321 for every image. As described in questions.md, the
     # watermark is resized to (k, k) once here in a hard-coded manner rather than
@@ -61,7 +73,15 @@ if __name__ == "__main__":
 
             # Compute PSNR between (a) original and watermarked images; (b)original watermark and recovered watermark
             # ###############################################
-            # Write your code here
+            
+            # (a) Invisibility: how well the watermarked photo matches the original cover
+            psnr_w = compute_psnr(images_rgb[i], watermarked_image_rgb)
+            
+            # (b) Recoverability: how faithfully the mark comes back
+            psnr_r = compute_psnr(watermark_rgb, recovered_rgb)
+            
+            psnr_watermarked_alpha.append(psnr_w)
+            psnr_recovered_alpha.append(psnr_r)
             
             # ###############################################
 
@@ -89,5 +109,3 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.savefig("plots/task2_psnr_results.png", metadata={"Author": getpass.getuser()})
-
-

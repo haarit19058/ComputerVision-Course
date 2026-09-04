@@ -32,7 +32,12 @@ def add_gaussian_noise(image: np.ndarray, stddev: float = 0.01) -> np.ndarray:
             Noisy image
         """
 
-    noisy_image = np.zeros_like(image) # comment this line and write your code for the function
+    # Generate Gaussian noise with mean 0 and specified standard deviation
+    noise = np.random.normal(loc=0.0, scale=stddev, size=image.shape)
+    
+    # Add noise to the image and clip the values to keep them in [0, 1] range
+    noisy_image = np.clip(image + noise, 0.0, 1.0)
+    
     return noisy_image
 
 STDDEV = [0.01, 0.05, 0.1, 0.15]  # Standard deviations for Gaussian noise
@@ -63,8 +68,18 @@ if __name__ == "__main__":
             for image in images_rgb:
                 # Apply watermarking, add Gaussian noise, and recover the watermark from the noisy image
                 # ###############################################
-                # Comment below line and write your code here
-                pass
+                
+                # 1. Add the watermark to the clean image
+                clean_watermarked = add_watermark_rgb(image, watermark_rgb, alpha)
+                
+                # 2. Simulate internet compression/corruption by adding Gaussian noise
+                noisy_watermarked = add_gaussian_noise(clean_watermarked, stddev)
+                
+                # 3. Attempt to extract the QR code from the corrupted image
+                recovered_wm = recover_watermark_rgb(image, noisy_watermarked, watermark_rgb, alpha)
+                
+                watermarked_images_per_alpha.append(noisy_watermarked)
+                recovered_watermarks_per_alpha.append(recovered_wm)
                 
                 # ###############################################
 
@@ -116,8 +131,19 @@ if __name__ == "__main__":
             for alpha_idx, alpha in enumerate(ALPHAS):
                 # Compute PSNR between (a) original and watermarked noisy images; (b) original watermark and recovered watermark from the noisy image
                 # ###############################################
-                # Comment below line and write your code here
-                pass
+                
+                # Fetch images from our previously built lists
+                noisy_img = watermarked_images_rgb[stddev_idx][alpha_idx][image_idx]
+                recovered_img = recovered_watermarks_rgb[stddev_idx][alpha_idx][image_idx]
+                
+                # (a) Compare pristine original cover against the noisy, watermarked version
+                psnr_noisy_cover = compute_psnr(image, noisy_img)
+                
+                # (b) Compare original pristine QR code against the extracted (likely messy) one
+                psnr_recovered_qr = compute_psnr(watermark_rgb, recovered_img)
+                
+                noisy_watermarked_psnr_per_image.append(psnr_noisy_cover)
+                recovered_watermark_psnr_per_image.append(psnr_recovered_qr)
                 
                 # ###############################################
 
@@ -152,7 +178,3 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.savefig("plots/task3_psnr_vs_alpha.png", metadata={"Author": getpass.getuser()})
-
-
-
-# %%

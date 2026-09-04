@@ -64,8 +64,18 @@ if __name__ == "__main__":
             for image in images_rgb:
                 # Apply watermarking, apply JPEG compression, and recover the watermark from the compressed image
                 # ###############################################
-                # Comment below line and write your code here
-                pass
+                
+                # 1. Add the watermark to the clean image
+                clean_watermarked = add_watermark_rgb(image, watermark_rgb, alpha)
+                
+                # 2. Simulate internet re-encoding by applying JPEG compression
+                compressed_watermarked = jpg_compression(clean_watermarked, quality)
+                
+                # 3. Attempt to extract the QR code from the compressed image
+                recovered_wm = recover_watermark_rgb(image, compressed_watermarked, watermark_rgb, alpha)
+                
+                watermarked_images_per_alpha.append(compressed_watermarked)
+                recovered_watermarks_per_alpha.append(recovered_wm)
                 
                 # ###############################################
 
@@ -117,8 +127,19 @@ if __name__ == "__main__":
             for alpha_idx, alpha in enumerate(ALPHAS):
                 # Compute PSNR between (a) original and watermarked compressed images; (b) original watermark and recovered watermark from the compressed image
                 # ###############################################
-                # Comment below line and write your code here
-                pass
+                
+                # Fetch images from our previously built lists
+                compressed_img = watermarked_images_rgb[quality_idx][alpha_idx][image_idx]
+                recovered_img = recovered_watermarks_rgb[quality_idx][alpha_idx][image_idx]
+                
+                # (a) Compare pristine original cover against the compressed, watermarked version
+                psnr_compressed_cover = compute_psnr(image, compressed_img)
+                
+                # (b) Compare original pristine QR code against the extracted one
+                psnr_recovered_qr = compute_psnr(watermark_rgb, recovered_img)
+                
+                noisy_watermarked_psnr_per_image.append(psnr_compressed_cover)
+                recovered_watermark_psnr_per_image.append(psnr_recovered_qr)
                 
                 # ###############################################
 
