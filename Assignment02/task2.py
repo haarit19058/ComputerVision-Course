@@ -101,7 +101,9 @@ def integral_image(image: np.ndarray) -> np.ndarray:
     np.ndarray
         Table of shape (H + 1, W + 1)
     """
-    return np.zeros((image.shape[0] + 1, image.shape[1] + 1))  # comment this line and write your code for the function
+    ii = np.zeros((image.shape[0] + 1, image.shape[1] + 1), dtype=np.float64)
+    ii[1:, 1:] = np.cumsum(np.cumsum(image, axis=0), axis=1)
+    return ii
 
 
 def box_sum(ii: np.ndarray, y0: np.ndarray, x0: np.ndarray,
@@ -125,7 +127,7 @@ def box_sum(ii: np.ndarray, y0: np.ndarray, x0: np.ndarray,
     np.ndarray
         Sums, broadcast to the shape of y0 and x0
     """
-    return np.zeros_like(y0, dtype=np.float64)  # comment this line and write your code for the function
+    return ii[y0 + h, x0 + w] - ii[y0, x0 + w] - ii[y0 + h, x0] + ii[y0, x0]
 
 
 def ncc_map(image: np.ndarray, template: np.ndarray) -> np.ndarray:
@@ -153,8 +155,48 @@ def ncc_map(image: np.ndarray, template: np.ndarray) -> np.ndarray:
         Score map of shape (H - th + 1, W - tw + 1), still 2-D: one score
         per position, not one per channel.
     """
-    return np.zeros((image.shape[0] - template.shape[0] + 1,
-                     image.shape[1] - template.shape[1] + 1))  # comment this line and write your code for the function
+    H, W, C = image.shape
+    th, tw, _ = template.shape
+    
+    t_mean = np.mean(template)
+    t_c = template - t_mean
+    t_norm = np.sqrt(np.sum(t_c ** 2))
+    
+    out_h, out_w = H - th + 1, W - tw + 1
+    numerator = np.zeros((out_h, out_w), dtype=np.float64)
+    sum_I = np.zeros((out_h, out_w), dtype=np.float64)
+    sum_I2 = np.zeros((out_h, out_w), dtype=np.float64)
+    
+    y0 = np.arange(out_h)[:, None]
+    x0 = np.arange(out_w)[None, :]
+    
+    for c in range(C):
+        img_c = image[:, :, c]
+        views = sliding_windows(img_c, th, tw)
+        
+        # Cross-correlation via einsum as suggested
+        numerator += np.einsum('ijkl,kl->ij', views, t_c[:, :, c])
+        
+        # Local stats via integral images for O(1) complexity per window
+        ii = integral_image(img_c)
+        ii2 = integral_image(img_c ** 2)
+        
+        sum_I += box_sum(ii, y0, x0, th, tw)
+        sum_I2 += box_sum(ii2, y0, x0, th, tw)
+        
+    N = th * tw * C
+    mean_I = sum_I / N
+    
+    var_I = sum_I2 - N * (mean_I ** 2)
+    var_I = np.maximum(var_I, 0.0) 
+    i_norm = np.sqrt(var_I)
+    
+    denom = i_norm * t_norm
+    ncc = np.zeros_like(numerator)
+    mask = denom > 1e-8
+    ncc[mask] = numerator[mask] / denom[mask]
+    
+    return ncc
 
 
 def find_peaks(score_map: np.ndarray, threshold: float,
@@ -182,7 +224,35 @@ def find_peaks(score_map: np.ndarray, threshold: float,
     np.ndarray
         Shape (K, 3), columns (y, x, score), best first. (0, 3) if none pass.
     """
-    return np.zeros((0, 3))  # comment this line and write your code for the function
+    ys, xs = np.nonzero(score_map >= threshold)
+    scores = score_map[ys, xs]
+    
+    if len(scores) == 0:
+        return np.zeros((0, 3))
+        
+    order = np.argsort(scores)[::-1]
+    ys = ys[order]
+    xs = xs[order]
+    scores = scores[order]
+    
+    kept = []
+    for y, x, s in zip(ys, xs, scores):
+        if len(kept) == max_peaks:
+            break
+            
+        conflict = False
+        for ky, kx, _ in kept:
+            if max(abs(y - ky), abs(x - kx)) < min_distance:
+                conflict = True
+                break
+                
+        if not conflict:
+            kept.append((y, x, s))
+            
+    if not kept:
+        return np.zeros((0, 3))
+        
+    return np.array(kept, dtype=np.float64)
 
 
 def non_max_suppression(boxes: np.ndarray, scores: np.ndarray,
@@ -207,7 +277,26 @@ def non_max_suppression(boxes: np.ndarray, scores: np.ndarray,
     list
         Indices of the kept boxes, best score first
     """
-    return []  # comment this line and write your code for the function
+    if len(boxes) == 0:
+        return []
+        
+    order = np.argsort(scores)[::-1]
+    kept_indices = []
+    
+    while order.size > 0:
+        i = order[0]
+        kept_indices.append(i)
+        
+        if order.size == 1:
+            break
+            
+        rest_indices = order[1:]
+        box_a = tuple(boxes[i])
+        
+        ious = np.array([iou(box_a, tuple(boxes[j])) for j in rest_indices])
+        order = rest_indices[ious <= iou_threshold]
+        
+    return kept_indices
 
 
 def detect_multiscale(image: np.ndarray, template: np.ndarray,
@@ -238,7 +327,38 @@ def detect_multiscale(image: np.ndarray, template: np.ndarray,
     list
         Detections, best first. Possibly empty.
     """
-    return []  # comment this line and write your code for the function
+    H, W = image.shape[:2]
+    all_detections = []
+    all_boxes = []
+    all_scores = []
+    
+    for scale in scales:
+        scaled_template = resize_template(template, scale)
+        th, tw = scaled_template.shape[:2]
+        
+        if th > H or tw > W:
+            continue
+            
+        scores = ncc_map(image, scaled_template)
+        peaks = find_peaks(scores, threshold=0.5) 
+        
+        for y, x, score in peaks:
+            all_boxes.append([x, y, tw, th])
+            all_scores.append(score)
+            all_detections.append({
+                "x": int(x), "y": int(y), "w": int(tw), "h": int(th),
+                "score": float(score), "scale": float(scale)
+            })
+            
+    if not all_detections:
+        return []
+        
+    all_boxes = np.array(all_boxes)
+    all_scores = np.array(all_scores)
+    
+    kept_indices = non_max_suppression(all_boxes, all_scores, iou_threshold=0.3)
+    
+    return [all_detections[i] for i in kept_indices]
 
 
 if __name__ == "__main__":
@@ -252,11 +372,8 @@ if __name__ == "__main__":
         scene = load_image_as_rgb("imgs/{}.png".format(name))
         scenes_rgb.append(load_image_as_rgb("imgs/{}.png".format(name)))
 
-        # #############################################
-        # Comment these lines and write your code here
-        found = []
+        found = detect_multiscale(scene, template)
         best = found[0] if found else None
-        # #############################################
 
         detections.append(best)
         truth = load_ground_truth(name)

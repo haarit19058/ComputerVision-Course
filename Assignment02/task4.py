@@ -54,7 +54,7 @@ def draw_matches(template: np.ndarray, scene_rgb: np.ndarray,
     canvas[:scene_rgb.shape[0], left.shape[1]:] = scene_rgb
 
     plt.figure(figsize=(14, 7))
-    plt.imshow(canvas)
+    plt.imshow(canvas.astype(np.uint8))
     for (a, b), voted in zip(matches, votes):
         plt.plot([kp_t[a, 1] * zoom, kp_s[b, 1] + left.shape[1]],
                  [kp_t[a, 0] * zoom, kp_s[b, 0]],
@@ -87,7 +87,17 @@ def descriptor_distances(desc_a: np.ndarray, desc_b: np.ndarray) -> np.ndarray:
     np.ndarray
         Shape (Na, Nb) of Euclidean distances
     """
-    return np.zeros((len(desc_a), len(desc_b)))  # comment this line and write your code for the function
+    if len(desc_a) == 0 or len(desc_b) == 0:
+        return np.zeros((len(desc_a), len(desc_b)))
+
+    norm_a = np.sum(desc_a ** 2, axis=1, keepdims=True)
+    norm_b = np.sum(desc_b ** 2, axis=1, keepdims=True)
+    cross_term = np.dot(desc_a, desc_b.T)
+    
+    dist_sq = norm_a + norm_b.T - 2 * cross_term
+    dist_sq = np.clip(dist_sq, 0.0, None)
+    
+    return np.sqrt(dist_sq)
 
 
 def match_ratio_test(desc_scene: np.ndarray, desc_template: np.ndarray,
@@ -110,7 +120,24 @@ def match_ratio_test(desc_scene: np.ndarray, desc_template: np.ndarray,
         (0, 2) if nothing survives. Note the column order: template first,
         which is what predict_centres expects.
     """
-    return np.zeros((0, 2), dtype=int)  # comment this line and write your code for the function
+    if len(desc_scene) == 0 or len(desc_template) == 0:
+        return np.zeros((0, 2), dtype=int)
+
+    dists = descriptor_distances(desc_scene, desc_template)
+    sorted_indices = np.argsort(dists, axis=1)
+    
+    best_indices = sorted_indices[:, 0]
+    second_indices = sorted_indices[:, 1]
+    
+    best_dists = dists[np.arange(len(desc_scene)), best_indices]
+    second_dists = dists[np.arange(len(desc_scene)), second_indices]
+    
+    valid_mask = best_dists < (ratio * second_dists)
+    
+    scene_matches = np.where(valid_mask)[0]
+    template_matches = best_indices[valid_mask]
+    
+    return np.column_stack((template_matches, scene_matches))
 
 
 def predict_centres(kp_template: np.ndarray, kp_scene: np.ndarray,
@@ -153,7 +180,32 @@ def predict_centres(kp_template: np.ndarray, kp_scene: np.ndarray,
         Shape (M, 3), columns (cx, cy, s), in scene pixels. (0, 3) if no
         matches. Vectorise it -- no Python loop over matches.
     """
-    return np.zeros((0, 3))  # comment this line and write your code for the function
+    if len(matches) == 0:
+        return np.zeros((0, 3))
+
+    t_idx = matches[:, 0]
+    s_idx = matches[:, 1]
+    
+    yt, xt, sigmat = kp_template[t_idx].T
+    ys, xs, sigmas = kp_scene[s_idx].T
+    
+    thetat = ori_template[t_idx]
+    thetas = ori_scene[s_idx]
+    
+    s = sigmas / sigmat
+    dtheta = np.radians(thetas - thetat)
+    
+    Ht, Wt = template_shape
+    ox = (Wt / 2.0) - xt
+    oy = (Ht / 2.0) - yt
+    
+    cos_d = np.cos(dtheta)
+    sin_d = np.sin(dtheta)
+    
+    cx = xs + s * (cos_d * ox - sin_d * oy)
+    cy = ys + s * (sin_d * ox + cos_d * oy)
+    
+    return np.column_stack((cx, cy, s))
 
 
 def consensus_centre(predictions: np.ndarray, tol: float = 12.0,
@@ -189,7 +241,26 @@ def consensus_centre(predictions: np.ndarray, tol: float = 12.0,
         centre (cx, cy) or None, scale (float) or None, and a boolean mask of
         shape (M,) marking which predictions joined the consensus
     """
-    return None, None, np.zeros(0, dtype=bool)  # comment this line and write your code for the function
+    M = len(predictions)
+    if M < min_votes:
+        return None, None, np.zeros(M, dtype=bool)
+
+    coords = predictions[:, :2]
+    dists = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=2)
+    
+    vote_counts = np.sum(dists <= tol, axis=1)
+    best_seed = np.argmax(vote_counts)
+    
+    consensus_mask = dists[best_seed] <= tol
+    
+    if np.sum(consensus_mask) < min_votes:
+        return None, None, np.zeros(M, dtype=bool)
+        
+    cluster = predictions[consensus_mask]
+    med_cx, med_cy = np.median(cluster[:, :2], axis=0)
+    med_scale = np.median(cluster[:, 2])
+    
+    return (med_cx, med_cy), med_scale, consensus_mask
 
 
 def find_waldo(scene: np.ndarray, template: np.ndarray,
@@ -212,11 +283,57 @@ def find_waldo(scene: np.ndarray, template: np.ndarray,
         "matches", "votes", "kp_template", "kp_scene". Return None for the
         box when there is no consensus -- do not invent one.
     """
-    return {"box": None, "n_matches": 0, "n_votes": 0,
-            "matches": np.zeros((0, 2), int),
-            "votes": np.zeros(0, bool),
-            "kp_template": np.zeros((0, 3)),
-            "kp_scene": np.zeros((0, 3))}  # comment this line and write your code for the function
+    empty_result = {
+        "box": None, "n_matches": 0, "n_votes": 0,
+        "matches": np.zeros((0, 2), int),
+        "votes": np.zeros(0, bool),
+        "kp_template": np.zeros((0, 3)),
+        "kp_scene": np.zeros((0, 3))
+    }
+
+    if upsample != 1.0:
+        th, tw = template.shape
+        template_proc = cv2.resize(template, (int(tw * upsample), int(th * upsample)), interpolation=cv2.INTER_CUBIC)
+    else:
+        template_proc = template
+
+    kp_t = dog_keypoints(template_proc)
+    if len(kp_t) == 0:
+        return empty_result
+
+    ori_t = np.array([dominant_orientation(template_proc, y, x, s) for y, x, s in kp_t])
+    desc_t = describe_keypoints(template_proc, kp_t, ori_t)
+
+    kp_s = dog_keypoints(scene)
+    if len(kp_s) == 0:
+        empty_result["kp_template"] = kp_t
+        return empty_result
+
+    ori_s = np.array([dominant_orientation(scene, y, x, s) for y, x, s in kp_s])
+    desc_s = describe_keypoints(scene, kp_s, ori_s)
+
+    matches = match_ratio_test(desc_s, desc_t)
+    if len(matches) == 0:
+        empty_result["kp_template"] = kp_t
+        empty_result["kp_scene"] = kp_s
+        return empty_result
+
+    preds = predict_centres(kp_t, kp_s, matches, ori_t, ori_s, template_proc.shape)
+    centre, scale, votes = consensus_centre(preds)
+
+    box = None
+    if centre is not None:
+        box = box_from_centre(centre[0], centre[1], scale, template_proc.shape)
+
+    return {
+        "box": box,
+        "n_matches": len(matches),
+        "n_votes": int(np.sum(votes)),
+        "matches": matches,
+        "votes": votes,
+        "kp_template": kp_t,
+        "kp_scene": kp_s
+    }
 
 
 if __name__ == "__main__":

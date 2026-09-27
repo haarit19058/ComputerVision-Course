@@ -31,8 +31,6 @@ def load_image_as_rgb(image_path: str) -> np.ndarray:
     return image.astype(np.float64) / 255.0
 
 
-
-
 def load_image_as_grayscale(image_path: str) -> np.ndarray:
     """Load straight to luminance, shape (H, W). Used by Task 3."""
     return to_grayscale(load_image_as_rgb(image_path))
@@ -64,8 +62,6 @@ def add_salt_pepper_noise(image: np.ndarray, amount: float = 0.04,
     return out
 
 
-
-
 # ================================================================
 # %%
 # Task 1
@@ -83,9 +79,19 @@ def gaussian_blur(image: np.ndarray, sigma: float) -> np.ndarray:
     Works on (H, W) and on (H, W, 3): a linear filter acts on each colour
     channel independently, so only the two spatial axes are padded.
     """
-    #TODO: Write your Code for Gaussian Blur
+    if sigma <= 0:
+        return image.copy()
 
-    return image
+    radius = int(np.ceil(3.0 * sigma))
+    x = np.arange(-radius, radius + 1, dtype=np.float64)
+    kernel_1d = np.exp(-0.5 * (x / sigma) ** 2)
+    kernel_1d /= kernel_1d.sum()
+
+    # Pass 1: Horizontal blur along columns
+    row_blur = convolve2d(image, kernel_1d[None, :])
+    # Pass 2: Vertical blur along rows
+    return convolve2d(row_blur, kernel_1d[:, None])
+
 
 def to_grayscale(image: np.ndarray) -> np.ndarray:
     """Collapse an RGB image to one luminance channel, shape (H, W).
@@ -104,8 +110,9 @@ def to_grayscale(image: np.ndarray) -> np.ndarray:
     if image.ndim == 2:
         return image
 
-    #TODO: Write the code for Grayscale
-    return image
+    weights = np.array([0.299, 0.587, 0.114], dtype=np.float64)
+    return np.dot(image[..., :3], weights)
+
 
 def convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     """Convolve an image with a kernel, keeping the same output size.
@@ -132,7 +139,25 @@ def convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     np.ndarray
         Filtered image, same shape as the input
     """
-    return np.zeros_like(image)  # comment this line and write your code for the function
+    kh, kw = kernel.shape
+    pad_h, pad_w = kh // 2, kw // 2
+
+    pad_width = [(pad_h, pad_h), (pad_w, pad_w)]
+    if image.ndim == 3:
+        pad_width.append((0, 0))
+
+    padded = np.pad(image, pad_width, mode="reflect")
+    k_flipped = kernel[::-1, ::-1]
+
+    h_out, w_out = image.shape[:2]
+    out = np.zeros_like(image, dtype=np.float64)
+
+    for i in range(kh):
+        for j in range(kw):
+            window = padded[i : i + h_out, j : j + w_out]
+            out += window * k_flipped[i, j]
+
+    return out
 
 
 def gaussian_kernel(size: int, sigma: float) -> np.ndarray:
@@ -153,7 +178,12 @@ def gaussian_kernel(size: int, sigma: float) -> np.ndarray:
     np.ndarray
         Kernel of shape (size, size), summing to 1
     """
-    return np.zeros((size, size))  # comment this line and write your code for the function
+    radius = size // 2
+    coords = np.arange(-radius, radius + 1, dtype=np.float64)
+    xx, yy = np.meshgrid(coords, coords)
+
+    kernel = np.exp(-(xx**2 + yy**2) / (2.0 * sigma**2))
+    return kernel / np.sum(kernel)
 
 
 def median_filter(image: np.ndarray, size: int) -> np.ndarray:
@@ -179,7 +209,19 @@ def median_filter(image: np.ndarray, size: int) -> np.ndarray:
     np.ndarray
         Filtered image, same shape as the input
     """
-    return np.zeros_like(image)  # comment this line and write your code for the function
+    radius = size // 2
+    pad_width = [(radius, radius), (radius, radius)]
+    if image.ndim == 3:
+        pad_width.append((0, 0))
+
+    padded = np.pad(image, pad_width, mode="reflect")
+
+    if image.ndim == 2:
+        windows = np.lib.stride_tricks.sliding_window_view(padded, (size, size))
+        return np.median(windows, axis=(-2, -1))
+    else:
+        windows = np.lib.stride_tricks.sliding_window_view(padded, (size, size), axis=(0, 1))
+        return np.median(windows, axis=(-2, -1))
 
 
 def sobel_edges(image: np.ndarray) -> tuple:
@@ -197,8 +239,23 @@ def sobel_edges(image: np.ndarray) -> tuple:
         gx (H, W), gy (H, W), magnitude (H, W), orientation (H, W) in degrees
         wrapped into [0, 360)
     """
-    return (np.zeros(image.shape[:2]), np.zeros(image.shape[:2]),
-            np.zeros(image.shape[:2]), np.zeros(image.shape[:2]))  # comment this line and write your code for the function
+    gray = to_grayscale(image)
+
+    kx = np.array([[-1.0, 0.0, 1.0],
+                   [-2.0, 0.0, 2.0],
+                   [-1.0, 0.0, 1.0]], dtype=np.float64)
+
+    ky = np.array([[-1.0, -2.0, -1.0],
+                   [ 0.0,  0.0,  0.0],
+                   [ 1.0,  2.0,  1.0]], dtype=np.float64)
+
+    gx = convolve2d(gray, kx)
+    gy = convolve2d(gray, ky)
+
+    magnitude = np.hypot(gx, gy)
+    orientation = np.degrees(np.arctan2(gy, gx)) % 360.0
+
+    return gx, gy, magnitude, orientation
 
 
 def psnr(image: np.ndarray, reference: np.ndarray) -> float:
@@ -220,7 +277,10 @@ def psnr(image: np.ndarray, reference: np.ndarray) -> float:
     float
         PSNR in dB, or float("inf") when the two images are identical
     """
-    return 0.0  # comment this line and write your code for the function
+    mse = np.mean((image - reference) ** 2)
+    if mse == 0.0:
+        return float("inf")
+    return float(10.0 * np.log10(1.0 / mse))
 
 
 def ssim(image: np.ndarray, reference: np.ndarray) -> tuple:
@@ -250,7 +310,27 @@ def ssim(image: np.ndarray, reference: np.ndarray) -> tuple:
         as the input. The map is worth plotting: it shows you WHERE a filter
         did damage.
     """
-    return 0.0, np.zeros_like(image)  # comment this line and write your code for the function
+    c1 = 0.01 ** 2
+    c2 = 0.03 ** 2
+
+    mu_a = gaussian_blur(image, 1.5)
+    mu_b = gaussian_blur(reference, 1.5)
+
+    mu_a_sq = mu_a ** 2
+    mu_b_sq = mu_b ** 2
+    mu_ab = mu_a * mu_b
+
+    var_a = gaussian_blur(image ** 2, 1.5) - mu_a_sq
+    var_b = gaussian_blur(reference ** 2, 1.5) - mu_b_sq
+    cov_ab = gaussian_blur(image * reference, 1.5) - mu_ab
+
+    numerator = (2.0 * mu_ab + c1) * (2.0 * cov_ab + c2)
+    denominator = (mu_a_sq + mu_b_sq + c1) * (var_a + var_b + c2)
+
+    ssim_map = numerator / denominator
+    mean_ssim = float(np.mean(ssim_map))
+
+    return mean_ssim, ssim_map
 
 
 if __name__ == "__main__":
@@ -260,13 +340,11 @@ if __name__ == "__main__":
     salted = add_salt_pepper_noise(clean, amount=0.04)
 
     # Denoise each kind of noise with each kind of filter, then score them.
-    # #############################################
-    # Comment these lines and write your code here
-    box_on_gaussian = np.zeros_like(noisy)
-    gauss_on_gaussian = np.zeros_like(noisy)
-    median_on_salt = np.zeros_like(salted)
-    gauss_on_salt = np.zeros_like(salted)
-    # #############################################
+    box_9x9 = np.ones((9, 9), dtype=np.float64) / 81.0
+    box_on_gaussian = convolve2d(noisy, box_9x9)
+    gauss_on_gaussian = gaussian_blur(noisy, sigma=2.0)
+    median_on_salt = median_filter(salted, size=5)
+    gauss_on_salt = gaussian_blur(salted, sigma=1.5)
 
     results = [("box 9x9 on gaussian", noisy, box_on_gaussian),
                ("gaussian s=2 on gaussian", noisy, gauss_on_gaussian),
