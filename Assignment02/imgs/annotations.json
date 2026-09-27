@@ -1,0 +1,113 @@
+{
+  "seed": 1234,
+  "template": {
+    "file": "templates/waldo_template.png",
+    "mask": "templates/waldo_mask.png",
+    "head": "templates/waldo_head.png",
+    "width": 28,
+    "height": 56
+  },
+  "scenes": [
+    {
+      "name": "scene_easy",
+      "file": "images/scene_easy.png",
+      "width": 1000,
+      "height": 700,
+      "n_characters": 91,
+      "difficulty": "easy",
+      "waldo": {
+        "x": 613,
+        "y": 553,
+        "w": 28,
+        "h": 56,
+        "cx": 627.0,
+        "cy": 581.0
+      },
+      "scale": 1.0,
+      "rotation_deg": 0.0,
+      "occluded": false,
+      "noise_sigma": 0.0
+    },
+    {
+      "name": "scene_medium",
+      "file": "images/scene_medium.png",
+      "width": 1000,
+      "height": 700,
+      "n_characters": 161,
+      "difficulty": "medium",
+      "waldo": {
+        "x": 670,
+        "y": 132,
+        "w": 38,
+        "h": 76,
+        "cx": 689.0,
+        "cy": 170.0
+      },
+      "scale": 1.35,
+      "rotation_deg": 0.0,
+      "occluded": false,
+      "noise_sigma": 0.02
+    },
+    {
+      "name": "scene_hard",
+      "file": "images/scene_hard.png",
+      "width": 1000,
+      "height": 700,
+      "n_characters": 231,
+      "difficulty": "hard",
+      "waldo": {
+        "x": 125,
+        "y": 383,
+        "w": 42,
+        "h": 84,
+        "cx": 146.0,
+        "cy": 425.0
+      },
+      "scale": 1.5,
+      "rotation_deg": 0.0,
+      "occluded": true,
+      "noise_sigma": 0.035,
+      "occlusion_frac": 0.0689
+    },
+    {
+      "name": "scene_tiny",
+      "file": "images/scene_tiny.png",
+      "width": 260,
+      "height": 200,
+      "n_characters": 12,
+      "difficulty": "tiny",
+      "waldo": {
+        "x": 57,
+        "y": 81,
+        "w": 28,
+        "h": 56,
+        "cx": 71.0,
+        "cy": 109.0
+      },
+      "scale": 1.0,
+      "rotation_deg": 0.0,
+      "occluded": false,
+      "noise_sigma": 0.0
+    },
+    {
+      "name": "scene_rotated",
+      "file": "images/scene_rotated.png",
+      "width": 1000,
+      "height": 700,
+      "n_characters": 111,
+      "difficulty": "rotated",
+      "waldo": {
+        "x": 228,
+        "y": 290,
+        "w": 50,
+        "h": 65,
+        "cx": 253.0,
+        "cy": 322.5
+      },
+      "scale": 1.138248877215683,
+      "rotation_deg": -31.421844029918617,
+      "occluded": false,
+      "noise_sigma": 0.01
+    }
+  ]
+}
