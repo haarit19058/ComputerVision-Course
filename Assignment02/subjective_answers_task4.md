@@ -1,6 +1,6 @@
 ### 4.6 Why the median fails
 
-The median only works if more than half of your data is correct. In image matching, over 85% of the matches are usually wrong. The few correct matches clump tightly directly over Waldo, while the wrong matches are scattered randomly across the entire image. If you take the median of all these points, the huge number of random points outweighs the good ones. The math just finds the physical middle of all that random noise—usually the center of the image—completely missing Waldo.
+The median only works if more than half of your data is correct. In image matching, most of the matches are usually wrong. The few correct matches clump tightly directly over Waldo, while the wrong matches are scattered randomly across the entire image. If you take the median of all these points, the huge number of random points outweighs the good ones. The math just finds the physical middle of all that random noise—usually the center of the image—completely missing Waldo.
 
 ### 4.7 The abnormality: each method fails where the other does not
 

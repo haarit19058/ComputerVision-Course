@@ -271,17 +271,9 @@ def find_waldo(scene: np.ndarray, template: np.ndarray,
                 "matches": np.zeros((0, 2), int), "votes": np.zeros(0, bool),
                 "kp_template": kp_t, "kp_scene": kp_s}
 
-    # Extract orientations (handling whether the function expects arrays or scalars)
-    try:
-        ori_t = dominant_orientation(t_up, kp_t)
-        ori_s = dominant_orientation(scene, kp_s)
-    except Exception:
-        try:
-            ori_t = dominant_orientation(t_up, kp_t[:, 0], kp_t[:, 1], kp_t[:, 2])
-            ori_s = dominant_orientation(scene, kp_s[:, 0], kp_s[:, 1], kp_s[:, 2])
-        except TypeError:
-            ori_t = np.array([dominant_orientation(t_up, y, x, s) for y, x, s in kp_t])
-            ori_s = np.array([dominant_orientation(scene, y, x, s) for y, x, s in kp_s])
+
+    ori_t = np.array([dominant_orientation(t_up, y, x, s) for y, x, s in kp_t])
+    ori_s = np.array([dominant_orientation(scene, y, x, s) for y, x, s in kp_s])
 
     desc_t = describe_keypoints(t_up, kp_t, ori_t)
     desc_s = describe_keypoints(scene, kp_s, ori_s)
