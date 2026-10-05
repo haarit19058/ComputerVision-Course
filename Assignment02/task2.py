@@ -256,7 +256,30 @@ def masked_ncc_map(image: np.ndarray, template: np.ndarray, mask: np.ndarray) ->
 
 def find_peaks(score_map: np.ndarray, threshold: float,
                min_distance: int = 8, max_peaks: int = 20) -> np.ndarray:
-    """Pick the strongest well-separated positions out of a score map."""
+    """Pick the strongest well-separated positions out of a score map.
+
+    Take every position scoring >= threshold, sort them best first, then walk
+    the list keeping a position only if it is at least min_distance away from
+    every position already kept. Distance here is CHEBYSHEV: the larger of the
+    row gap and the column gap. Stop once max_peaks are kept.
+
+    Parameters
+    ----------
+    score_map : np.ndarray
+        Output of ncc_map
+    threshold : float
+        Minimum score to consider
+    min_distance : int
+        Minimum separation between kept peaks
+    max_peaks : int
+        Stop after this many
+
+    Returns
+    -------
+    np.ndarray
+        Shape (K, 3), columns (y, x, score), best first. (0, 3) if none pass.
+    """
+
     ys, xs = np.nonzero(score_map >= threshold)
     scores = score_map[ys, xs]
 
@@ -290,7 +313,27 @@ def find_peaks(score_map: np.ndarray, threshold: float,
 
 def non_max_suppression(boxes: np.ndarray, scores: np.ndarray,
                         iou_threshold: float = 0.3) -> list:
-    """Drop boxes that overlap a better-scoring box."""
+    """Drop boxes that overlap a better-scoring box.
+
+    Keep the highest-scoring box, discard every remaining box whose IoU with
+    it is MORE than iou_threshold (strictly more, so a box exactly at the
+    threshold survives), and repeat with what is left.
+
+    Parameters
+    ----------
+    boxes : np.ndarray
+        Shape (N, 4), each row (x, y, w, h)
+    scores : np.ndarray
+        Shape (N,), higher is better
+    iou_threshold : float
+        Overlap above which a box is suppressed
+
+    Returns
+    -------
+    list
+        Indices of the kept boxes, best score first
+    """
+
     if len(boxes) == 0:
         return []
 
@@ -315,7 +358,32 @@ def non_max_suppression(boxes: np.ndarray, scores: np.ndarray,
 
 def detect_multiscale(image: np.ndarray, template: np.ndarray,
                       scales: tuple = SCALES) -> list:
-    """Search every scale, pool the hits, and thin them down."""
+    """Search every scale, pool the hits, and thin them down.
+
+    For each scale: resize the template with resize_template, skip the scale
+    if the result no longer fits inside the image, score it with ncc_map, and
+    take the peaks with find_peaks. Record each peak as a detection.
+
+    Then run non_max_suppression across the detections from ALL scales
+    together, and return the survivors sorted by decreasing score.
+
+    A detection is a dict with exactly these keys:
+        {"x": int, "y": int, "w": int, "h": int, "score": float, "scale": float}
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Scene of shape (H, W)
+    template : np.ndarray
+        Template at its native size
+    scales : tuple
+        Multipliers to try
+
+    Returns
+    -------
+    list
+        Detections, best first. Possibly empty.
+    """
     H, W = image.shape[:2]
     all_detections = []
     all_boxes = []
@@ -362,6 +430,7 @@ if __name__ == "__main__":
         scene = load_image_as_rgb("imgs/{}.png".format(name))
         scenes_rgb.append(scene)
 
+        ######### Code added here #######
         found = detect_multiscale(scene, template)
         best = found[0] if found else None
 
@@ -372,7 +441,7 @@ if __name__ == "__main__":
             name, best["score"] if best else 0.0,
             best["scale"] if best else 0.0, overlap))
 
-    # Task 2.8: Grayscale Benchmark
+    ######### Task 2.8: Grayscale Benchmark. #########
     print("\n--- Grayscale Evaluation (Q 2.8) ---")
     print("{:<16}{:>9}{:>8}{:>8}".format("scene", "score", "scale", "IoU"))
     template_gray = to_grayscale(template)
@@ -386,7 +455,7 @@ if __name__ == "__main__":
             name, best_g["score"] if best_g else 0.0,
             best_g["scale"] if best_g else 0.0, overlap_g))
 
-    # Task 2.9: Masked vs Unmasked on scene_hard
+    ######### Task 2.9: Masked vs Unmasked on scene_hard #############
     print("\n--- Masked vs Unmasked NCC on scene_hard (Q 2.9) ---")
     scene_hard = load_image_as_rgb("imgs/scene_hard.png")
     mask = cv2.imread("imgs/waldo_mask.png", cv2.IMREAD_GRAYSCALE).astype(np.float64) / 255.0
@@ -409,7 +478,7 @@ if __name__ == "__main__":
     print(f"Unmasked Best Score: {best_unmasked[0]:.4f} at Scale: {best_unmasked[1]:.2f}")
     print(f"Masked Best Score:   {best_masked[0]:.4f} at Scale: {best_masked[1]:.2f}")
 
-    # Task 2.10: Statistics across scales
+    ########## Task 2.10: Statistics across scales ##########
     print("\n--- Score Map Statistics Across Scales for scene_hard (Q 2.10) ---")
     print(f"{'Scale':>8}{'Pixels':>12}{'Max Score':>12}{'Std Dev':>12}")
     for scale in SCALES:
