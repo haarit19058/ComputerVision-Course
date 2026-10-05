@@ -387,3 +387,19 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.savefig("plots/task3_results.png", metadata={"Author": getpass.getuser()})
     print("\nwrote plots/task3_results.png")
+
+    print("\n--- 3.7 Ladder Trade Test ---")
+    configs = [
+        (0.8, 8, 1.25),
+        (0.5, 10, 1.2),
+        (1.5, 5, 1.5)
+    ]
+
+    for sigma0, n_scales, k in configs:
+        kps = dog_keypoints(template, sigma0=sigma0, n_scales=n_scales, k=k, max_keypoints=TEMPLATE_KEYPOINTS)
+        if len(kps) > 0:
+            sig_min, sig_max = kps[:, 2].min(), kps[:, 2].max()
+            print(f"sigma0={sigma0}, n_scales={n_scales}, k={k} -> Keypoints: {len(kps)}, σ range: [{sig_min:.2f}, {sig_max:.2f}]")
+        else:
+            print(f"sigma0={sigma0}, n_scales={n_scales}, k={k} -> Keypoints: 0, σ range: [N/A]")
+

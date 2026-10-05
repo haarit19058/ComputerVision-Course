@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from task1 import *
 from task2 import *
 from task3 import *
+
 # %%
 # Helper Functions
 # ================================================================
@@ -54,7 +55,7 @@ def draw_matches(template: np.ndarray, scene_rgb: np.ndarray,
     canvas[:scene_rgb.shape[0], left.shape[1]:] = scene_rgb
 
     plt.figure(figsize=(14, 7))
-    plt.imshow(canvas.astype(np.uint8))
+    plt.imshow(canvas)
     for (a, b), voted in zip(matches, votes):
         plt.plot([kp_t[a, 1] * zoom, kp_s[b, 1] + left.shape[1]],
                  [kp_t[a, 0] * zoom, kp_s[b, 0]],
@@ -87,21 +88,22 @@ def descriptor_distances(desc_a: np.ndarray, desc_b: np.ndarray) -> np.ndarray:
     np.ndarray
         Shape (Na, Nb) of Euclidean distances
     """
-    if len(desc_a) == 0 or len(desc_b) == 0:
-        return np.zeros((len(desc_a), len(desc_b)))
+    desc_a = np.asarray(desc_a, dtype=np.float64)
+    desc_b = np.asarray(desc_b, dtype=np.float64)
 
-    norm_a = np.sum(desc_a ** 2, axis=1, keepdims=True)
-    norm_b = np.sum(desc_b ** 2, axis=1, keepdims=True)
-    cross_term = np.dot(desc_a, desc_b.T)
+    if desc_a.shape[0] == 0 or desc_b.shape[0] == 0:
+        return np.zeros((desc_a.shape[0], desc_b.shape[0]))
     
-    dist_sq = norm_a + norm_b.T - 2 * cross_term
-    dist_sq = np.clip(dist_sq, 0.0, None)
+    sq_a = np.sum(desc_a**2, axis=1, keepdims=True)
+    sq_b = np.sum(desc_b**2, axis=1)
+    dot = np.dot(desc_a, desc_b.T)
+    dist_sq = sq_a + sq_b - 2 * dot
     
-    return np.sqrt(dist_sq)
+    return np.sqrt(np.maximum(dist_sq, 0))
 
 
 def match_ratio_test(desc_scene: np.ndarray, desc_template: np.ndarray,
-                     ratio: float = 0.8) -> np.ndarray:
+                     ratio: float = 0.9) -> np.ndarray:
     """Ask every SCENE keypoint which template part it looks like.
 
     Parameters
@@ -120,48 +122,31 @@ def match_ratio_test(desc_scene: np.ndarray, desc_template: np.ndarray,
         (0, 2) if nothing survives. Note the column order: template first,
         which is what predict_centres expects.
     """
-    if len(desc_scene) == 0 or len(desc_template) == 0:
+    distances = descriptor_distances(desc_scene, desc_template)
+    
+    if distances.shape[0] == 0 or distances.shape[1] < 2:
         return np.zeros((0, 2), dtype=int)
-
-    dists = descriptor_distances(desc_scene, desc_template)
-    sorted_indices = np.argsort(dists, axis=1)
     
-    best_indices = sorted_indices[:, 0]
-    second_indices = sorted_indices[:, 1]
+    # Sort along the template axis (axis=1) for each scene keypoint
+    sorted_idx = np.argsort(distances, axis=1)
+    best_idx = sorted_idx[:, 0]
+    second_best_idx = sorted_idx[:, 1]
     
-    best_dists = dists[np.arange(len(desc_scene)), best_indices]
-    second_dists = dists[np.arange(len(desc_scene)), second_indices]
+    best_dist = distances[np.arange(distances.shape[0]), best_idx]
+    second_dist = distances[np.arange(distances.shape[0]), second_best_idx]
     
-    valid_mask = best_dists < (ratio * second_dists)
+    mask = best_dist < (ratio * second_dist)
     
-    scene_matches = np.where(valid_mask)[0]
-    template_matches = best_indices[valid_mask]
+    scene_indices = np.where(mask)[0]
+    template_indices = best_idx[mask]
     
-    return np.column_stack((template_matches, scene_matches))
+    return np.column_stack((template_indices, scene_indices))
 
 
 def predict_centres(kp_template: np.ndarray, kp_scene: np.ndarray,
                     matches: np.ndarray, ori_template: np.ndarray,
                     ori_scene: np.ndarray, template_shape: tuple) -> np.ndarray:
     """Turn every single match into a full guess at where Waldo is.
-
-    This is the idea the whole task turns on. A matched keypoint carries a
-    scale and an orientation as well as a position, so comparing them gives
-    the size change and the rotation -- and once you know those, ONE match is
-    enough to point at the centre of the whole object.
-
-    For a match pairing template keypoint (y_t, x_t, sigma_t) at angle
-    theta_t with scene keypoint (y_s, x_s, sigma_s) at theta_s, and template
-    shape (H_t, W_t):
-
-        s      = sigma_s / sigma_t                     the size change
-        dtheta = theta_s - theta_t                     the rotation, degrees
-        ox, oy = W_t / 2 - x_t,  H_t / 2 - y_t         offset to the centre
-        cx     = x_s + s * (cos(dtheta) * ox - sin(dtheta) * oy)
-        cy     = y_s + s * (sin(dtheta) * ox + cos(dtheta) * oy)
-
-    A correct match puts (cx, cy) on Waldo. A wrong one puts it anywhere at
-    all, possibly off the image. That is expected, and Task 4.4 cleans it up.
 
     Parameters
     ----------
@@ -185,46 +170,32 @@ def predict_centres(kp_template: np.ndarray, kp_scene: np.ndarray,
 
     t_idx = matches[:, 0]
     s_idx = matches[:, 1]
-    
-    yt, xt, sigmat = kp_template[t_idx].T
-    ys, xs, sigmas = kp_scene[s_idx].T
-    
-    thetat = ori_template[t_idx]
-    thetas = ori_scene[s_idx]
-    
-    s = sigmas / sigmat
-    dtheta = np.radians(thetas - thetat)
-    
-    Ht, Wt = template_shape
-    ox = (Wt / 2.0) - xt
-    oy = (Ht / 2.0) - yt
-    
+
+    y_t, x_t, sigma_t = kp_template[t_idx].T
+    y_s, x_s, sigma_s = kp_scene[s_idx].T
+
+    theta_t = ori_template[t_idx]
+    theta_s = ori_scene[s_idx]
+
+    s = sigma_s / sigma_t
+    dtheta = np.radians(theta_s - theta_t)
+
+    H_t, W_t = template_shape
+    ox = W_t / 2.0 - x_t
+    oy = H_t / 2.0 - y_t
+
     cos_d = np.cos(dtheta)
     sin_d = np.sin(dtheta)
-    
-    cx = xs + s * (cos_d * ox - sin_d * oy)
-    cy = ys + s * (sin_d * ox + cos_d * oy)
-    
+
+    cx = x_s + s * (cos_d * ox - sin_d * oy)
+    cy = y_s + s * (sin_d * ox + cos_d * oy)
+
     return np.column_stack((cx, cy, s))
 
 
 def consensus_centre(predictions: np.ndarray, tol: float = 12.0,
                      min_votes: int = 8) -> tuple:
     """Find where the guesses pile up -- the DENSEST cluster, not the average.
-
-    Only about one match in eight is correct here. Any method that assumes
-    the good ones are a majority will fail, and that includes taking the
-    median: the median of all the predictions lands in the middle of the
-    scattered wrong ones and points at nothing. Measure that for yourself,
-    it is one of the questions.
-
-    Instead:
-      1. Compute the distance from every prediction to every other one.
-      2. Count, for each prediction, how many lie strictly within tol of it.
-      3. The one with the highest count is the seed.
-      4. The consensus is every prediction strictly within tol of that seed.
-      5. Fewer than min_votes in it means no detection.
-      6. Otherwise report the MEDIAN centre and MEDIAN scale of that cluster.
 
     Parameters
     ----------
@@ -241,30 +212,32 @@ def consensus_centre(predictions: np.ndarray, tol: float = 12.0,
         centre (cx, cy) or None, scale (float) or None, and a boolean mask of
         shape (M,) marking which predictions joined the consensus
     """
-    M = len(predictions)
-    if M < min_votes:
-        return None, None, np.zeros(M, dtype=bool)
+    if len(predictions) < min_votes:
+        return None, None, np.zeros(len(predictions), dtype=bool)
 
-    coords = predictions[:, :2]
-    dists = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=2)
+    centers = predictions[:, :2]
     
-    vote_counts = np.sum(dists <= tol, axis=1)
-    best_seed = np.argmax(vote_counts)
-    
-    consensus_mask = dists[best_seed] <= tol
-    
-    if np.sum(consensus_mask) < min_votes:
-        return None, None, np.zeros(M, dtype=bool)
-        
-    cluster = predictions[consensus_mask]
+    # Broadcast differences to find all-pairs distances (M, M)
+    diff = centers[:, np.newaxis, :] - centers[np.newaxis, :, :]
+    dist = np.linalg.norm(diff, axis=-1)
+
+    counts = np.sum(dist < tol, axis=1)
+    seed_idx = np.argmax(counts)
+
+    if counts[seed_idx] < min_votes:
+        return None, None, np.zeros(len(predictions), dtype=bool)
+
+    mask = dist[seed_idx] < tol
+    cluster = predictions[mask]
+
     med_cx, med_cy = np.median(cluster[:, :2], axis=0)
-    med_scale = np.median(cluster[:, 2])
-    
-    return (med_cx, med_cy), med_scale, consensus_mask
+    med_s = np.median(cluster[:, 2])
+
+    return (med_cx, med_cy), med_s, mask
 
 
 def find_waldo(scene: np.ndarray, template: np.ndarray,
-               upsample: float = 2.0) -> dict:
+               upsample: float = 1.0) -> dict:
     """Put it all together: detect, describe, match, vote.
 
     Parameters
@@ -283,65 +256,60 @@ def find_waldo(scene: np.ndarray, template: np.ndarray,
         "matches", "votes", "kp_template", "kp_scene". Return None for the
         box when there is no consensus -- do not invent one.
     """
-    empty_result = {
-        "box": None, "n_matches": 0, "n_votes": 0,
-        "matches": np.zeros((0, 2), int),
-        "votes": np.zeros(0, bool),
-        "kp_template": np.zeros((0, 3)),
-        "kp_scene": np.zeros((0, 3))
-    }
+    h_orig, w_orig = template.shape
+    th = max(1, int(round(h_orig * upsample)))
+    tw = max(1, int(round(w_orig * upsample)))
+    
+    # Enlarge the template before detecting
+    t_up = cv2.resize(template, (tw, th), interpolation=cv2.INTER_LINEAR)
 
-    if upsample != 1.0:
-        th, tw = template.shape
-        template_proc = cv2.resize(template, (int(tw * upsample), int(th * upsample)), interpolation=cv2.INTER_CUBIC)
-    else:
-        template_proc = template
+    kp_t = with_unit_scale(dog_keypoints(t_up))
+    kp_s = with_unit_scale(dog_keypoints(scene))
 
-    kp_t = dog_keypoints(template_proc)
-    if len(kp_t) == 0:
-        return empty_result
+    if len(kp_t) == 0 or len(kp_s) == 0:
+        return {"box": None, "n_matches": 0, "n_votes": 0,
+                "matches": np.zeros((0, 2), int), "votes": np.zeros(0, bool),
+                "kp_template": kp_t, "kp_scene": kp_s}
 
-    ori_t = np.array([dominant_orientation(template_proc, y, x, s) for y, x, s in kp_t])
-    desc_t = describe_keypoints(template_proc, kp_t, ori_t)
+    # Extract orientations (handling whether the function expects arrays or scalars)
+    try:
+        ori_t = dominant_orientation(t_up, kp_t)
+        ori_s = dominant_orientation(scene, kp_s)
+    except Exception:
+        try:
+            ori_t = dominant_orientation(t_up, kp_t[:, 0], kp_t[:, 1], kp_t[:, 2])
+            ori_s = dominant_orientation(scene, kp_s[:, 0], kp_s[:, 1], kp_s[:, 2])
+        except TypeError:
+            ori_t = np.array([dominant_orientation(t_up, y, x, s) for y, x, s in kp_t])
+            ori_s = np.array([dominant_orientation(scene, y, x, s) for y, x, s in kp_s])
 
-    kp_s = dog_keypoints(scene)
-    if len(kp_s) == 0:
-        empty_result["kp_template"] = kp_t
-        return empty_result
-
-    ori_s = np.array([dominant_orientation(scene, y, x, s) for y, x, s in kp_s])
+    desc_t = describe_keypoints(t_up, kp_t, ori_t)
     desc_s = describe_keypoints(scene, kp_s, ori_s)
 
     matches = match_ratio_test(desc_s, desc_t)
-    if len(matches) == 0:
-        empty_result["kp_template"] = kp_t
-        empty_result["kp_scene"] = kp_s
-        return empty_result
+    preds = predict_centres(kp_t, kp_s, matches, ori_t, ori_s, (th, tw))
 
-    preds = predict_centres(kp_t, kp_s, matches, ori_t, ori_s, template_proc.shape)
-    centre, scale, votes = consensus_centre(preds)
+    center, scale_s, votes_mask = consensus_centre(preds)
 
-    box = None
-    if centre is not None:
-        box = box_from_centre(centre[0], centre[1], scale, template_proc.shape)
+    # Scale the template keypoints back down to original size for draw_matches
+    kp_t_orig = kp_t.copy()
+    kp_t_orig[:, :2] /= upsample
+    kp_t_orig[:, 2] /= upsample
 
-    return {
-        "box": box,
-        "n_matches": len(matches),
-        "n_votes": int(np.sum(votes)),
-        "matches": matches,
-        "votes": votes,
-        "kp_template": kp_t,
-        "kp_scene": kp_s
-    }
+    if center is None:
+        return {"box": None, "n_matches": len(matches), "n_votes": 0,
+                "matches": matches, "votes": votes_mask,
+                "kp_template": kp_t_orig, "kp_scene": kp_s}
+
+    box = box_from_centre(center[0], center[1], scale_s * upsample, (h_orig, w_orig))
+
+    return {"box": box, "n_matches": len(matches), "n_votes": int(np.sum(votes_mask)),
+            "matches": matches, "votes": votes_mask,
+            "kp_template": kp_t_orig, "kp_scene": kp_s}
 
 
 if __name__ == "__main__":
 
-    # The two pipelines want different inputs, and the difference is the
-    # point. Correlation (Task 2) keeps all three channels, because Waldo's
-    # red is most of what identifies him. The feature pipeline (Task 3)
-    # needs a scalar field to take gradients of, so it gets luminance.
     template_rgb = load_image_as_rgb("imgs/waldo_template.png")
     template = to_grayscale(template_rgb)
     scene_names = ["scene_easy", "scene_medium", "scene_rotated", "scene_hard"]
@@ -353,11 +321,8 @@ if __name__ == "__main__":
         scene = to_grayscale(scene_rgb)
         truth = load_ground_truth(name)
 
-        # ###############################################
-        # Comment these lines and write your code here
         found = find_waldo(scene, template)
         correlation = detect_multiscale(scene_rgb, template_rgb)
-        # ###############################################
 
         feature_box = found["box"]
         corr_box = None
@@ -365,10 +330,7 @@ if __name__ == "__main__":
             best = correlation[0]
             corr_box = (best["x"], best["y"], best["w"], best["h"])
 
-        # Scored against the truth here, for your report only. Notice that
-        # find_waldo itself never sees it.
         overlap = iou(feature_box, truth) if feature_box else 0.0
-        # Do the two completely different methods agree with each other?
         agreement = (iou(feature_box, corr_box)
                      if feature_box and corr_box else 0.0)
         print("{:<16}{:>9}{:>8}{:>9.3f}{:>10.3f}".format(
@@ -394,3 +356,14 @@ if __name__ == "__main__":
     print("\nwrote plots/task4_matches.png and plots/task4_<scene>.png")
     print("The last column is agreement between Task 2 and Task 4, computed")
     print("without any ground truth. Compare it against the IoU column.")
+
+
+    # Question 3.8
+
+    scene_easy = to_grayscale(load_image_as_rgb("imgs/scene_easy.png"))
+
+    for upsample in [1.5, 2.0, 3.0, 4.0]:
+        res = find_waldo(scene_easy, template, upsample=upsample)
+        n_kp = len(res["kp_template"])
+        n_matches = res["n_matches"]
+        print(f"upsample={upsample:.1f} | Template Keypoints: {n_kp} | Matches: {n_matches}")

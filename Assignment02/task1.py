@@ -114,7 +114,8 @@ def to_grayscale(image: np.ndarray) -> np.ndarray:
     return np.dot(image[..., :3], weights)
 
 
-def convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+# Modified: Added `pad_mode` parameter with a default of "reflect" for Q1.10
+def convolve2d(image: np.ndarray, kernel: np.ndarray, pad_mode: str = "reflect") -> np.ndarray:
     """Convolve an image with a kernel, keeping the same output size.
 
     Pad the image by half the kernel on each side (reflect the edge pixels),
@@ -133,6 +134,8 @@ def convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
         Image of shape (H, W) or (H, W, 3), values in [0, 1]
     kernel : np.ndarray
         Kernel of shape (kh, kw), both odd
+    pad_mode : str
+        Padding mode used by np.pad. Default is "reflect".
 
     Returns
     -------
@@ -146,7 +149,8 @@ def convolve2d(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     if image.ndim == 3:
         pad_width.append((0, 0))
 
-    padded = np.pad(image, pad_width, mode="reflect")
+    # Modified: Using the pad_mode parameter instead of hardcoding "reflect"
+    padded = np.pad(image, pad_width, mode=pad_mode)
     k_flipped = kernel[::-1, ::-1]
 
     h_out, w_out = image.shape[:2]
@@ -252,6 +256,7 @@ def sobel_edges(image: np.ndarray) -> tuple:
     gx = convolve2d(gray, kx)
     gy = convolve2d(gray, ky)
 
+    # Polar form: magnitude and orientation (in degrees, wrapped to [0, 360))
     magnitude = np.hypot(gx, gy)
     orientation = np.degrees(np.arctan2(gy, gx)) % 360.0
 
@@ -339,6 +344,9 @@ if __name__ == "__main__":
     noisy = add_gaussian_noise(clean, sigma=0.06)
     salted = add_salt_pepper_noise(clean, amount=0.04)
 
+    # ---------------------------------------------------------
+    # ORIGINAL RGB RUN
+    # ---------------------------------------------------------
     # Denoise each kind of noise with each kind of filter, then score them.
     box_9x9 = np.ones((9, 9), dtype=np.float64) / 81.0
     box_on_gaussian = convolve2d(noisy, box_9x9)
@@ -358,7 +366,61 @@ if __name__ == "__main__":
         print("{:<32}{:>10.2f}{:>10.2f}{:>10.4f}{:>10.4f}".format(
             label, psnr(before, clean), psnr(after, clean),
             ssim(before, clean)[0], ssim(after, clean)[0]))
+            
+    # ---------------------------------------------------------
+    # NEW: GRAYSCALE RUN (For Question 1.9)
+    # ---------------------------------------------------------
+    print("\n--- Running Grayscale Table for Q 1.9 ---")
+    clean_gray = to_grayscale(clean)
+    noisy_gray = add_gaussian_noise(clean_gray, sigma=0.06)
+    salted_gray = add_salt_pepper_noise(clean_gray, amount=0.04)
 
+    box_on_gaussian_g = convolve2d(noisy_gray, box_9x9)
+    gauss_on_gaussian_g = gaussian_blur(noisy_gray, sigma=2.0)
+    median_on_salt_g = median_filter(salted_gray, size=5)
+    gauss_on_salt_g = gaussian_blur(salted_gray, sigma=1.5)
+
+    results_gray = [
+        ("box 9x9 on gaussian", noisy_gray, box_on_gaussian_g),
+        ("gaussian s=2 on gaussian", noisy_gray, gauss_on_gaussian_g),
+        ("median 5x5 on salt+pepper", salted_gray, median_on_salt_g),
+        ("gaussian s=1.5 on salt+pepper", salted_gray, gauss_on_salt_g)
+    ]
+
+    print("Grayscale images, 1 channel")
+    print("{:<32}{:>10}{:>10}{:>10}{:>10}".format(
+        "filter", "PSNR in", "PSNR out", "SSIM in", "SSIM out"))
+    for label, before, after in results_gray:
+        print("{:<32}{:>10.2f}{:>10.2f}{:>10.4f}{:>10.4f}".format(
+            label, psnr(before, clean_gray), psnr(after, clean_gray),
+            ssim(before, clean_gray)[0], ssim(after, clean_gray)[0]))
+
+    # ---------------------------------------------------------
+    # NEW: PADDING (For Question 1.10)
+    # ---------------------------------------------------------
+    print("\n--- Generating Padding Artefact for Q 1.10 ---")
+    # Use a large kernel so the edge artifact is visually obvious
+    large_kernel = gaussian_kernel(31, sigma=5.0) 
+    
+    # Run with reflect padding (standard behavior)
+    blurred_reflect = convolve2d(clean, large_kernel, pad_mode="reflect")
+    # Run with zero padding to see the artifact
+    blurred_zero = convolve2d(clean, large_kernel, pad_mode="constant")
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].imshow(np.clip(blurred_reflect, 0.0, 1.0))
+    axes[0].set_title("Large Blur (Reflect Padding)")
+    axes[1].imshow(np.clip(blurred_zero, 0.0, 1.0))
+    axes[1].set_title("Large Blur (Zero Padding) - Note borders")
+    for ax in axes:
+        ax.axis("off")
+    plt.tight_layout()
+    plt.savefig("plots/task1_padding_artefact.png", metadata={"Author": getpass.getuser()})
+    plt.close()
+
+    # ---------------------------------------------------------
+    # ORIGINAL PLOTTING CODE
+    # ---------------------------------------------------------
     _gx, _gy, magnitude, _orientation = sobel_edges(clean)
     _mean_ssim, ssim_map = ssim(median_on_salt, clean)
 
@@ -387,4 +449,6 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.savefig("plots/task1_edges.png", metadata={"Author": getpass.getuser()})
     plt.close()
-    print("\nwrote plots/task1_results.png and plots/task1_edges.png")
+    
+    # Updated print statement to reflect the new plot
+    print("\nwrote plots/task1_results.png, plots/task1_edges.png, and plots/task1_padding_artefact.png")
