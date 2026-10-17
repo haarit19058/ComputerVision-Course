@@ -1,0 +1,9 @@
+numpy>=1.24
+pillow>=10.0
+matplotlib>=3.7
+jupyterlab>=4.0  # to open and run the notebooks (VS Code with its Jupyter extension works too)
+ipykernel>=6.0
+nbclient>=0.9    # for run_notebooks.py
+nbformat>=5.9
+pytest>=7.0      # for the checks: python -m pytest, and make_submission.py
+plotly>=5.0      # only for the optional 3D animation of Task 4.4
