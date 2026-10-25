@@ -1,6 +1,7 @@
 # Image credits
 
 
+
 ## Concept diagrams
 
 All diagram PNGs were drawn for this notebook with matplotlib by the course team's build scripts. They are part of
