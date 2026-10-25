@@ -1,0 +1,12 @@
+# the crate is downloaded by the notebook; keep it out of git
+data
+data/
+mini_rome*.zip
+*_cloud/
+.setup-*/
+.venv/
+uv.lock
+.ipynb_checkpoints/
+__pycache__/
+*.part
+*.unzipping/
